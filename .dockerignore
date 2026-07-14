@@ -1,0 +1,10 @@
+target/
+Yunzai/
+.git
+.gitignore
+.vscode
+.idea
+__pycache__
+*.pyc
+*.txt
+scripts/

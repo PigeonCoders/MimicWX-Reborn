@@ -1,0 +1,45 @@
+services:
+  mimicwx:
+    build: .
+    container_name: mimicwx-linux
+    stdin_open: true # docker attach 需要 (-i)
+    tty: true # 终端模式 (-t)
+    cap_add:
+      - SYS_ADMIN # fanotify WAL 监听
+      - SYS_PTRACE # GDB 密钥提取
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    ports:
+      - "5901:5901" # VNC
+      - "6080:6080" # noVNC
+      - "8899:8899" # MimicWX API
+    volumes:
+      - wechat-data:/home/wechat/.xwechat
+      - cargo-cache:/opt/cargo-cache       # 热部署: Rust 工具链 + 编译缓存
+      - /home/ubuntu/projects/MimicWX-Reborn:/home/wechat/mimicwx-reborn
+    shm_size: '512m'
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-sf", "http://localhost:8899/status" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - mimicwx-net
+    dns:
+      - 223.5.5.5   # 阿里 DNS (延迟 20ms, 最快)
+      - 114.114.114.114
+
+networks:
+  mimicwx-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: "1452"  # 匹配宿主机 MTU, 避免分片
+
+volumes:
+  wechat-data:
+  cargo-cache:

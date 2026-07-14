@@ -1,0 +1,30 @@
+[package]
+name = "mimicwx-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mimicwx"
+path = "src/main.rs"
+
+[dependencies]
+mimicwx-core = { workspace = true }
+mimicwx-atspi = { workspace = true }
+mimicwx-input = { workspace = true }
+mimicwx-db = { workspace = true }
+mimicwx-wechat = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+libc = { workspace = true }
+base64 = { workspace = true }

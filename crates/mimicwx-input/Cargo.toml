@@ -1,0 +1,15 @@
+[package]
+name = "mimicwx-input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mimicwx-core = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

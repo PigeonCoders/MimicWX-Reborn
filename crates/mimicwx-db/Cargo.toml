@@ -1,0 +1,22 @@
+[package]
+name = "mimicwx-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mimicwx-core = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rusqlite = { workspace = true }
+fanotify-rs = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+quick-xml = { workspace = true }
+zstd = { workspace = true }
+base64 = { workspace = true }
+arc-swap = { workspace = true }
+md5 = { workspace = true }

@@ -1,0 +1,38 @@
+# Logs
+output.log
+
+# Build outputs
+/target/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# Debug dumps
+*.txt
+!README.txt
+
+# Config (keep example only)
+config.toml
+
+# Tool caches
+.cached-context/
+.qartez/
+
+# Excluded directories
+Yunzai/
+Docs/
