@@ -33,6 +33,9 @@ config.toml
 .cached-context/
 .qartez/
 
+# Local planning
+/Task.md
+
 # Excluded directories
 Yunzai/
 Docs/
