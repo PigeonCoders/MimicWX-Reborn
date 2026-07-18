@@ -33,6 +33,10 @@ pub struct DbManager {
     pub(crate) contacts: ArcSwap<HashMap<String, ContactInfo>>,
     /// 高水位线: "db_name::表名" → 最大 local_id
     pub(crate) watermarks: Mutex<HashMap<String, i64>>,
+    /// HTTP 增量接口独立高水位线，避免被后台 WebSocket 监听消费
+    api_watermarks: Mutex<Option<HashMap<String, i64>>>,
+    /// 串行化 HTTP 增量查询，避免并发请求读取同一批消息
+    api_fetch_lock: Mutex<()>,
     /// 持久化 message_N.db 连接池
     pub(crate) msg_conns: std::sync::Mutex<HashMap<String, Arc<std::sync::Mutex<Connection>>>>,
     /// 持久化 contact.db 连接
@@ -115,6 +119,8 @@ impl DbManager {
             self_display_name: tokio::sync::RwLock::new("我".to_string()),
             contacts: ArcSwap::from_pointee(HashMap::new()),
             watermarks: Mutex::new(HashMap::new()),
+            api_watermarks: Mutex::new(None),
+            api_fetch_lock: Mutex::new(()),
             msg_conns: std::sync::Mutex::new(conns),
             contact_conn: Arc::new(std::sync::Mutex::new(None)),
             session_conn: Arc::new(std::sync::Mutex::new(None)),
@@ -203,6 +209,52 @@ impl DbManager {
     /// 获取新消息 (遍历所有 message_N.db 持久连接)
     pub async fn get_new_messages(&self) -> Result<Vec<DbMessage>> {
         let current_watermarks = self.watermarks.lock().await.clone();
+        let (messages, new_watermarks) = self
+            .get_new_messages_with_watermarks(current_watermarks)
+            .await?;
+
+        if !messages.is_empty() {
+            *self.watermarks.lock().await = new_watermarks;
+            self.publish_messages(&messages);
+        }
+
+        Ok(messages)
+    }
+
+    /// 获取 HTTP 增量接口的新消息。
+    ///
+    /// HTTP 与后台 WebSocket 监听是两个独立消费者，各自推进自己的
+    /// 高水位线；否则后台监听先调用 `get_new_messages` 后，HTTP 接口
+    /// 永远只能看到空数组。
+    pub async fn get_new_messages_for_api(&self) -> Result<Vec<DbMessage>> {
+        let _fetch_guard = self.api_fetch_lock.lock().await;
+        let current_watermarks = {
+            let mut api_watermarks = self.api_watermarks.lock().await;
+            if let Some(watermarks) = api_watermarks.as_ref() {
+                watermarks.clone()
+            } else {
+                // 兼容未调用 mark_all_read 的场景，避免首次请求吐出全部历史消息。
+                let baseline = self.watermarks.lock().await.clone();
+                *api_watermarks = Some(baseline.clone());
+                baseline
+            }
+        };
+
+        let (messages, new_watermarks) = self
+            .get_new_messages_with_watermarks(current_watermarks)
+            .await?;
+
+        if !messages.is_empty() {
+            *self.api_watermarks.lock().await = Some(new_watermarks);
+        }
+
+        Ok(messages)
+    }
+
+    async fn get_new_messages_with_watermarks(
+        &self,
+        current_watermarks: HashMap<String, i64>,
+    ) -> Result<(Vec<DbMessage>, HashMap<String, i64>)> {
 
         let conn_arcs: Vec<(String, Arc<std::sync::Mutex<Connection>>)> = {
             let conns_guard = self.ensure_msg_conns()?;
@@ -315,10 +367,6 @@ impl DbManager {
             }
         }
 
-        if !raw_msgs.is_empty() {
-            *self.watermarks.lock().await = new_watermarks;
-        }
-
         // 异步填充显示名
         let contacts_cache = self.contacts.load();
         let self_display = self.self_display_name.read().await.clone();
@@ -366,15 +414,6 @@ impl DbManager {
             };
             let chat_display = resolve(&m.chat);
 
-            let base_type = (m.msg_type & 0xFFFF) as i32;
-            if base_type != 1 {
-                let raw_preview = if content.len() > 200 {
-                    format!("{}...", &content[..content.floor_char_boundary(200)])
-                } else {
-                    content.clone()
-                };
-                debug!(target: "mimicwx::msg", "type={} raw: {}", base_type, raw_preview);
-            }
             let parsed = parser::parse_msg_content(m.msg_type, &content);
 
             let at_user_list: Vec<String> = parser::extract_xml_text(&m.source, "atuserlist")
@@ -401,15 +440,31 @@ impl DbManager {
                 is_at_me,
                 at_user_list,
             });
-
-            // 自发消息广播
-            if is_self {
-                let _ = self.sent_content_tx.send((content, m.local_id));
-            }
         }
         drop(contacts_cache);
 
-        for m in &result {
+        Ok((result, new_watermarks))
+    }
+
+    /// 发布后台实时监听产生的日志和发送验证事件。
+    ///
+    /// HTTP 增量查询会读取同一批数据库消息，但不应重复触发这些副作用。
+    fn publish_messages(&self, messages: &[DbMessage]) {
+        for m in messages {
+            let base_type = (m.msg_type & 0xFFFF) as i32;
+            if base_type != 1 {
+                let raw_preview = if m.content.len() > 200 {
+                    format!("{}...", &m.content[..m.content.floor_char_boundary(200)])
+                } else {
+                    m.content.clone()
+                };
+                debug!(target: "mimicwx::msg", "type={} raw: {}", base_type, raw_preview);
+            }
+
+            if m.is_self {
+                let _ = self.sent_content_tx.send((m.content.clone(), m.local_id));
+            }
+
             let preview = m.parsed.preview(40);
             let icon = if m.is_self { "[send] →" } else { "" };
             if m.chat.contains("@chatroom") {
@@ -420,7 +475,6 @@ impl DbManager {
                     m.chat_display_name, m.talker, preview);
             }
         }
-        Ok(result)
     }
 
     /// 标记所有已有消息为已读
@@ -458,7 +512,9 @@ impl DbManager {
             Ok(watermarks)
         }).await??;
 
-        *self.watermarks.lock().await = wm;
+        let _api_fetch_guard = self.api_fetch_lock.lock().await;
+        *self.watermarks.lock().await = wm.clone();
+        *self.api_watermarks.lock().await = Some(wm);
         Ok(())
     }
 

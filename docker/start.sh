@@ -7,6 +7,25 @@ set +e  # 不因单个命令失败而退出
 # ============================================================
 # 0) 系统服务 (root)
 # ============================================================
+IDENTITY_DIR=/var/lib/mimicwx-identity
+IDENTITY_FILE="$IDENTITY_DIR/machine-id"
+mkdir -p "$IDENTITY_DIR" /var/lib/dbus
+
+# machine-id 必须在 system D-Bus 启动前恢复，避免容器重建改变设备身份。
+MACHINE_ID=$(tr -d '\r\n' < "$IDENTITY_FILE" 2>/dev/null)
+if [[ ! "$MACHINE_ID" =~ ^[0-9a-fA-F]{32}$ ]]; then
+  MACHINE_ID=$(tr -d '\r\n' < /etc/machine-id 2>/dev/null)
+fi
+if [[ ! "$MACHINE_ID" =~ ^[0-9a-fA-F]{32}$ ]]; then
+  MACHINE_ID=$(dbus-uuidgen)
+fi
+MACHINE_ID=${MACHINE_ID,,}
+printf '%s\n' "$MACHINE_ID" > "$IDENTITY_FILE"
+printf '%s\n' "$MACHINE_ID" > /etc/machine-id
+printf '%s\n' "$MACHINE_ID" > /var/lib/dbus/machine-id
+chown root:root "$IDENTITY_FILE" /etc/machine-id /var/lib/dbus/machine-id
+chmod 444 "$IDENTITY_FILE" /etc/machine-id /var/lib/dbus/machine-id
+
 mkdir -p /run/dbus
 dbus-daemon --system --fork 2>/dev/null || true
 
@@ -17,6 +36,8 @@ echo 0 > /proc/sys/kernel/yama/ptrace_scope 2>/dev/null || true
 chmod 666 /dev/uinput 2>/dev/null || true
 chown -R wechat:wechat /home/wechat/.xwechat 2>/dev/null || true
 chown -R wechat:wechat /home/wechat/mimicwx-reborn 2>/dev/null || true
+mkdir -p /home/wechat/Documents/xwechat_files
+chown -R wechat:wechat /home/wechat/Documents/xwechat_files 2>/dev/null || true
 mkdir -p /home/wechat/.xwechat/crashinfo/attachments
 chown -R wechat:wechat /home/wechat/.xwechat
 

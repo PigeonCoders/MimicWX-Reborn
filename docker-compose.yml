@@ -2,6 +2,8 @@ services:
   mimicwx:
     build: .
     container_name: mimicwx-linux
+    hostname: "44b9e1fc0f83"
+    mac_address: "3a:22:5a:64:3c:7b"
     stdin_open: true # docker attach 需要 (-i)
     tty: true # 终端模式 (-t)
     cap_add:
@@ -16,6 +18,8 @@ services:
       - "8899:8899" # MimicWX API
     volumes:
       - wechat-data:/home/wechat/.xwechat
+      - wechat-files:/home/wechat/Documents/xwechat_files
+      - wechat-identity:/var/lib/mimicwx-identity
       - cargo-cache:/opt/cargo-cache       # 热部署: Rust 工具链 + 编译缓存
       - /home/ubuntu/projects/MimicWX-Reborn:/home/wechat/mimicwx-reborn
     shm_size: '512m'
@@ -42,4 +46,6 @@ networks:
 
 volumes:
   wechat-data:
+  wechat-files:
+  wechat-identity:
   cargo-cache:

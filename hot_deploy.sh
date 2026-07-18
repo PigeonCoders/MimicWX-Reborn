@@ -11,7 +11,7 @@ set -e
 
 CONTAINER="mimicwx-linux"
 CARGO_HOME="/opt/cargo-cache"
-SRC_DIR="/home/wechat/mimicwx-linux"
+SRC_DIR="/home/wechat/mimicwx-reborn"
 BIN_PATH="/usr/local/bin/mimicwx"
 
 # 颜色

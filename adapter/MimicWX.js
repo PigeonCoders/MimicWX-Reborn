@@ -11,9 +11,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 
 const MIMICWX_URL = process.env.MIMICWX_URL || "http://localhost:8899"
-// ↓↓↓ 在这里填写你的 Token (与 config.toml 中 [api] token 一致) ↓↓↓
-const MIMICWX_TOKEN = "62811901aaAA"
-// ↑↑↑ 如不需要认证留空即可, 也可通过环境变量 MIMICWX_TOKEN 覆盖 ↑↑↑
+const MIMICWX_TOKEN = process.env.MIMICWX_TOKEN || ""
 const MIMICWX_WS = MIMICWX_URL.replace(/^http/, "ws") + "/ws" + (MIMICWX_TOKEN ? `?token=${encodeURIComponent(MIMICWX_TOKEN)}` : "")
 const RECONNECT_INTERVAL = 5000
 
@@ -65,8 +63,26 @@ Bot.adapter.push(
         case "Emoji":
           return { segments: [{ type: "text", text: "[表情]" }], display: "[表情]" }
         case "App": {
-          const t = parsed.data?.title || parsed.data?.desc || "链接"
-          const label = `[链接] ${t}`
+          const labels = {
+            music: "音乐", link: "链接", chat_record: "聊天记录",
+            mini_program: "小程序", pat: "拍一拍", announcement: "群公告",
+            gift: "微信礼物", transfer: "转账", red_packet: "红包", unknown: "App",
+          }
+          const kind = labels[parsed.data?.kind] || "App"
+          const text = parsed.data?.title || parsed.data?.desc
+          const label = text ? `[${kind}] ${text}` : `[${kind}]`
+          return { segments: [{ type: "text", text: label }], display: label }
+        }
+        case "File": {
+          const label = `[文件] ${parsed.data?.title || "未知文件"}`
+          return { segments: [{ type: "text", text: label }], display: label }
+        }
+        case "Quote": {
+          const comment = parsed.data.comment
+          const quotedContent = parsed.data.quoted_content
+          const quotedSender = parsed.data.quoted_sender
+          const quote = quotedSender ? `${quotedSender}: ${quotedContent}` : quotedContent
+          const label = `${comment} [引用 ${quote}]`
           return { segments: [{ type: "text", text: label }], display: label }
         }
         case "System":

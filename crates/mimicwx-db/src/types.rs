@@ -4,6 +4,93 @@
 
 use serde::Serialize;
 
+/// App 消息子类型 (msg_type=49 的 `<type>` 字段)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppKind {
+    Music,
+    Link,
+    ChatRecord,
+    MiniProgram,
+    Pat,
+    Announcement,
+    Gift,
+    Transfer,
+    RedPacket,
+    Unknown,
+}
+
+impl AppKind {
+    pub fn from_app_type(app_type: Option<i32>) -> Self {
+        match app_type {
+            Some(3) => Self::Music,
+            Some(4 | 5 | 49) => Self::Link,
+            Some(19) => Self::ChatRecord,
+            Some(33 | 36) => Self::MiniProgram,
+            Some(62) => Self::Pat,
+            Some(87) => Self::Announcement,
+            Some(115) => Self::Gift,
+            Some(2000) => Self::Transfer,
+            Some(2001) => Self::RedPacket,
+            _ => Self::Unknown,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Music => "音乐",
+            Self::Link => "链接",
+            Self::ChatRecord => "聊天记录",
+            Self::MiniProgram => "小程序",
+            Self::Pat => "拍一拍",
+            Self::Announcement => "群公告",
+            Self::Gift => "微信礼物",
+            Self::Transfer => "转账",
+            Self::RedPacket => "红包",
+            Self::Unknown => "App",
+        }
+    }
+}
+
+/// 合并转发聊天记录中的单条消息 (msg_type=49, subtype=19)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ChatRecordItem {
+    pub datatype: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_desc: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_head_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_ext: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_size: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_uuid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thumb_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cdn_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aes_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub md5: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_width: Option<u32>,
+    /// 微信原始 duration 值；语音通常为毫秒。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration: Option<u64>,
+}
+
 /// 联系人信息
 #[derive(Debug, Clone, Serialize)]
 pub struct ContactInfo {
@@ -69,8 +156,20 @@ pub enum MsgContent {
     },
     /// 表情包 (msg_type=47)
     Emoji { url: Option<String> },
-    /// 链接/小程序 (msg_type=49, subtype != 6)
-    App { title: Option<String>, desc: Option<String>, url: Option<String>, app_type: Option<i32> },
+    /// App 消息 (msg_type=49，文件和引用消息使用独立 variant)
+    App {
+        title: Option<String>,
+        desc: Option<String>,
+        url: Option<String>,
+        app_type: Option<i32>,
+        kind: AppKind,
+        /// subtype=19 的 `<recorditem>` CDATA 解包后的内层 XML
+        #[serde(skip_serializing_if = "Option::is_none")]
+        record_item_xml: Option<String>,
+        /// subtype=19 内按原顺序解析出的聊天记录条目
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        record_items: Vec<ChatRecordItem>,
+    },
     /// 文件 (msg_type=49, subtype=6)
     File {
         title: Option<String>,
@@ -94,6 +193,21 @@ pub enum MsgContent {
     },
     /// 系统消息 (msg_type=10000/10002)
     System { text: String },
+    /// 引用消息 (msg_type=49 sub=57, 或 msg_type=244813135921)
+    Quote {
+        /// 被引用的内容预览（如 "[图片]" / "你好" / "[链接] 标题"）
+        quoted_content: String,
+        /// 被引用消息的发送者名称
+        quoted_sender: Option<String>,
+        /// 被引用图片的 MD5（仅当引用图片时有值）
+        image_md5: Option<String>,
+        /// 被引用表情的 MD5
+        emoji_md5: Option<String>,
+        /// 被引用表情的 CDN URL
+        emoji_cdn_url: Option<String>,
+        /// 引用时的必填附言（来自外层 <title>）
+        comment: String,
+    },
     /// 未知类型
     Unknown { raw: String, msg_type: i64 },
 }
@@ -108,11 +222,12 @@ impl MsgContent {
             Self::Voice { .. } => "语音",
             Self::Video { .. } => "视频",
             Self::Emoji { .. } => "表情",
-            Self::App { .. } => "链接",
+            Self::App { kind, .. } => kind.label(),
             Self::File { .. } => "文件",
             Self::ContactCard { .. } => "名片",
             Self::Location { .. } => "位置",
             Self::System { .. } => "系统",
+            Self::Quote { .. } => "引用",
             Self::Unknown { .. } => "未知",
         }
     }
@@ -131,20 +246,17 @@ impl MsgContent {
             }
             Self::Video { .. } => "[视频]".into(),
             Self::Emoji { url, .. } => format!("[表情] {}", url.as_deref().unwrap_or("")),
-            Self::App { title, desc, app_type, .. } => {
+            Self::App { title, desc, kind, .. } => {
                 let t = title.as_deref().unwrap_or("");
                 let d = desc.as_deref().unwrap_or("");
-                let label = match app_type.unwrap_or(0) {
-                    3 => "音乐",
-                    19 => "转发",
-                    33 | 36 => "小程序",
-                    2000 => "转账",
-                    2001 => "红包",
-                    _ => "链接",
-                };
-                if !t.is_empty() { format!("[{label}] {t}") }
-                else if !d.is_empty() { format!("[{label}] {d}") }
-                else { format!("[{label}]") }
+                let label = kind.label();
+                if !t.is_empty() {
+                    format!("[{label}] {t}")
+                } else if !d.is_empty() {
+                    format!("[{label}] {d}")
+                } else {
+                    format!("[{label}]")
+                }
             }
             Self::File { title, file_size, .. } => {
                 let t = title.as_deref().unwrap_or("未知文件");
@@ -172,6 +284,13 @@ impl MsgContent {
                 }
             }
             Self::System { text } => format!("[系统] {text}"),
+            Self::Quote { comment, quoted_content, quoted_sender, .. } => {
+                let quoted = match quoted_sender {
+                    Some(sender) => format!("{sender}: {quoted_content}"),
+                    None => quoted_content.clone(),
+                };
+                format!("{comment} [引用 {quoted}]")
+            }
             Self::Unknown { msg_type, .. } => format!("[type={msg_type}]"),
         };
         if text.len() > max_len {

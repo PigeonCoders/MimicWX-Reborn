@@ -365,7 +365,7 @@ async fn get_group_members(
 
 async fn get_new_messages(State(state): State<Arc<AppState>>) -> Result<impl IntoResponse, ApiError> {
     let db = state.db.as_ref().ok_or_else(|| ApiError::unavailable("数据库不可用"))?;
-    match db.get_new_messages().await {
+    match db.get_new_messages_for_api().await {
         Ok(msgs) => Ok(Json(serde_json::to_value(msgs).unwrap_or_default())),
         Err(e) => Err(ApiError::internal(format!("消息查询失败: {e}"))),
     }

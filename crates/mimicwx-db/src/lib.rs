@@ -24,4 +24,7 @@ mod types;
 mod wcdb;
 
 pub use manager::DbManager;
-pub use types::{ContactInfo, DbMessage, DbSessionInfo, GroupMemberInfo, MsgContent, RawMsg, TableMeta};
+pub use types::{
+    AppKind, ChatRecordItem, ContactInfo, DbMessage, DbSessionInfo, GroupMemberInfo, MsgContent,
+    RawMsg, TableMeta,
+};
